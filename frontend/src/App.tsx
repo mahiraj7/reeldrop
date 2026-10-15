@@ -134,7 +134,7 @@ export default function App() {
       setDeployStep(2);
       setDeployLogs(prev => [...prev, "Spreading across Meta API with creator review gates..."]);
 
-      const response = await fetch("http://localhost:8000/api/deploy-campaign", {
+      const response = await fetch("https://reeldrop-api.onrender.com/api/deploy-campaign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -166,7 +166,7 @@ export default function App() {
     try {
       setReviewSuccessMsg("⏳ Contacting Meta Graph API... Publishing Reel to Instagram...");
       
-      const res = await fetch("http://localhost:8000/api/creator/approve-reel", {
+      const res = await fetch("https://reeldrop-api.onrender.com/api/creator/approve-reel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
