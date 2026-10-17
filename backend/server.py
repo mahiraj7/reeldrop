@@ -1,14 +1,15 @@
 import os
 import time
 import random
+import sqlite3
 import requests
 from datetime import datetime, timedelta
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
 
-app = FastAPI(title="ReelDrop Core Engine")
+app = FastAPI(title="ReelDrop Core Engine (Standalone SQLite)")
 
 app.add_middleware(
     CORSMiddleware,
@@ -18,24 +19,94 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SUPABASE_URL = "https://hshcbrvkxndwsjrgrsbq.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzaGNicnZreG5kd3Nqcmdyc2JxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE5NjU3NzQsImV4cCI6MjEwNzU0MTc3NH0.PxVAB3EpZaGtS9DmTYjJ2voyfkSrf_ISNfW_dXxu0_4"
+# ==================== CONFIGURATION ====================
+DB_FILE = "reeldrop.db"
 BASE_GRAPH_URL = "https://graph.facebook.com/v19.0"
 
-# Real Account Meta Credentials
 REAL_IG_ID = "17841405848759632"
-REAL_ACCESS_TOKEN = "EAAWS5Xwn0ikBSz4rV4xW5Mq4mMe69QExhtLVAr4M5f9zXjMC6G3iZAkR4RnTUZB2KstOjtHZAuxh4JsjyRPVK3B7dZA5ghVWDzaKnVcUTcZBoBTFWVRJ1wTBylhnX0FMzKwvks1U4YIA8e5qGCWyZC8EIY8ZBo5M46xXaeVljbDsLTAjZAzsmix4PhjRyerwGuN0Tz0RsbZCnBD5p2yZCkZACYUmwYI1Y3rYMvd8CgZCwfX0XhvE7wN97dLS3AlH9gRVc4SZAZASZAVzrnSudZA6WxtaphZBF"
+# Yahan Graph Explorer se fresh generate kiya hua token paste karo:
+REAL_ACCESS_TOKEN = "PASTE_YOUR_NEW_TOKEN_HERE"
 OWNER_SECRET_PIN = "2727"
 
-HEADERS = {
-    "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Content-Type": "application/json",
-    "Prefer": "return=representation"
-}
+# ==================== DATABASE INITIALIZATION ====================
+def get_db():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
 
+def init_db():
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # 1. Accounts Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS theme_pages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        owner_name TEXT,
+        instagram_business_id TEXT UNIQUE,
+        instagram_handle TEXT NOT NULL,
+        niche TEXT NOT NULL,
+        follower_count INTEGER DEFAULT 0,
+        price_per_reel REAL DEFAULT 30.00,
+        creator_payout_per_reel REAL DEFAULT 10.00,
+        is_real INTEGER DEFAULT 0,
+        requires_approval INTEGER DEFAULT 1
+    )
+    ''')
+
+    # 2. Campaigns Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS campaigns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_email TEXT NOT NULL,
+        total_assignments INTEGER NOT NULL,
+        total_amount REAL NOT NULL,
+        payment_status TEXT DEFAULT 'PAID',
+        created_at TEXT
+    )
+    ''')
+
+    # 3. Scheduled Deliveries / Queue Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS scheduled_deliveries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        campaign_id INTEGER,
+        page_id INTEGER,
+        video_url TEXT,
+        caption TEXT,
+        scheduled_for TEXT,
+        published_at TEXT,
+        status TEXT DEFAULT 'PENDING_APPROVAL',
+        meta_media_id TEXT,
+        retention_deadline TEXT,
+        payout_amount REAL,
+        payout_status TEXT DEFAULT 'LOCKED_7_DAYS',
+        created_at TEXT
+    )
+    ''')
+
+    # Seed Default Accounts if empty
+    cursor.execute("SELECT COUNT(*) FROM theme_pages")
+    if cursor.fetchone()[0] == 0:
+        seed_data = [
+            ('Mahiraj Singh', REAL_IG_ID, '@mahiraj.khakhri', 'Heritage & Travel', 1250, 30.00, 10.00, 1, 1),
+            ('Tech Radar', '17841400000000002', '@ai_daily_pulse', 'Tech & AI', 8400, 70.00, 25.00, 0, 0),
+            ('Wealth Club', '17841400000000003', '@wealth_mindset_in', 'Finance & Crypto', 18200, 120.00, 50.00, 0, 0),
+            ('Fitness Hub', '17841400000000004', '@fitness_hustle_club', 'Fitness & Health', 920, 0.00, 0.00, 0, 0),
+            ('Startup Daily', '17841400000000005', '@startup_chronicles', 'Business & Growth', 34500, 180.00, 80.00, 0, 0)
+        ]
+        cursor.executemany('''
+        INSERT INTO theme_pages (owner_name, instagram_business_id, instagram_handle, niche, follower_count, price_per_reel, creator_payout_per_reel, is_real, requires_approval)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', seed_data)
+        conn.commit()
+    conn.close()
+
+init_db()
+
+# ==================== META API HELPER ====================
 def publish_reel_to_meta(video_url: str, caption: str) -> str:
-    """Executes official Meta 3-step Reels pipeline"""
+    print(f"🚀 [Meta API] Starting Reel Container for: {video_url}")
     container_payload = {
         "media_type": "REELS",
         "video_url": video_url,
@@ -45,20 +116,39 @@ def publish_reel_to_meta(video_url: str, caption: str) -> str:
     }
     res = requests.post(f"{BASE_GRAPH_URL}/{REAL_IG_ID}/media", data=container_payload).json()
     creation_id = res.get("id")
+    
     if not creation_id:
-        return f"180{random.randint(10000000, 99999999)}"
+        print(f"❌ Container Error: {res}")
+        raise HTTPException(status_code=400, detail=f"Meta Container Error: {res}")
 
-    for _ in range(25):
+    print(f"✅ Container Created: {creation_id}. Polling encoding status...")
+    for i in range(25):
         time.sleep(4)
         stat = requests.get(f"{BASE_GRAPH_URL}/{creation_id}?fields=status_code&access_token={REAL_ACCESS_TOKEN}").json()
-        if stat.get("status_code") == "FINISHED":
+        status_code = stat.get("status_code")
+        print(f"   Polling {i+1}/25: {status_code}")
+        if status_code == "FINISHED":
             break
+        elif status_code in ["ERROR", "EXPIRED"]:
+            raise HTTPException(status_code=500, detail="Meta video processing failed")
 
     pub_res = requests.post(
         f"{BASE_GRAPH_URL}/{REAL_IG_ID}/media_publish",
         data={"creation_id": creation_id, "access_token": REAL_ACCESS_TOKEN}
     ).json()
-    return pub_res.get("id", f"180{random.randint(10000000, 99999999)}")
+    
+    media_id = pub_res.get("id")
+    if not media_id:
+        print(f"❌ Publish Error: {pub_res}")
+        raise HTTPException(status_code=400, detail=f"Publish failed: {pub_res}")
+
+    print(f"🎉 REEL IS LIVE! Media ID: {media_id}")
+    return media_id
+
+# ==================== API ROUTES ====================
+@app.get("/")
+def read_root():
+    return {"status": "online", "message": "ReelDrop Standalone Engine is running (No Supabase required)"}
 
 class JobItem(BaseModel):
     account_id: int
@@ -76,19 +166,18 @@ class DeployPayload(BaseModel):
 
 @app.post("/api/deploy-campaign")
 def deploy_campaign(payload: DeployPayload):
-    camp_res = requests.post(f"{SUPABASE_URL}/rest/v1/campaigns", headers=HEADERS, json={
-        "client_email": payload.client_email,
-        "total_assignments": len(payload.jobs),
-        "total_amount": payload.total_amount,
-        "payment_status": "PAID"
-    }).json()
-    campaign_id = camp_res[0]["id"] if camp_res else 1
+    conn = get_db()
+    cursor = conn.cursor()
+    now = datetime.utcnow().isoformat()
+
+    cursor.execute('''
+    INSERT INTO campaigns (client_email, total_assignments, total_amount, payment_status, created_at)
+    VALUES (?, ?, ?, 'PAID', ?)
+    ''', (payload.client_email, len(payload.jobs), payload.total_amount, now))
+    campaign_id = cursor.lastrowid
 
     results = []
-    now = datetime.utcnow()
-
     for job in payload.jobs:
-        # Check if requires approval
         if job.requires_approval or job.handle == "@mahiraj.khakhri":
             status_str = "PENDING_APPROVAL"
             media_id = None
@@ -97,26 +186,21 @@ def deploy_campaign(payload: DeployPayload):
             time.sleep(1)
             status_str = "LIVE"
             media_id = f"180{random.randint(10000000, 99999999)}"
-            retention = (now + timedelta(days=7)).isoformat()
+            retention = (datetime.utcnow() + timedelta(days=7)).isoformat()
 
-        requests.post(f"{SUPABASE_URL}/rest/v1/scheduled_deliveries", headers=HEADERS, json={
-            "campaign_id": campaign_id,
-            "page_id": job.account_id,
-            "scheduled_for": now.isoformat(),
-            "published_at": now.isoformat() if status_str == "LIVE" else None,
-            "status": status_str,
-            "meta_media_id": media_id,
-            "retention_deadline": retention,
-            "payout_amount": job.payout,
-            "payout_status": "LOCKED_7_DAYS"
-        })
+        cursor.execute('''
+        INSERT INTO scheduled_deliveries (campaign_id, page_id, video_url, caption, scheduled_for, published_at, status, meta_media_id, retention_deadline, payout_amount, payout_status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'LOCKED_7_DAYS', ?)
+        ''', (campaign_id, job.account_id, job.video_url, job.caption, now, now if status_str == "LIVE" else None, status_str, media_id, retention, job.payout, now))
 
         results.append({
             "handle": job.handle,
             "status": status_str,
-            "media_id": media_id or "Awaiting Owner PIN Review"
+            "media_id": media_id or "Awaiting Creator PIN Review"
         })
 
+    conn.commit()
+    conn.close()
     return {"status": "SUCCESS", "report": results}
 
 class ApprovalRequest(BaseModel):
@@ -127,60 +211,25 @@ class ApprovalRequest(BaseModel):
 
 @app.post("/api/creator/approve-reel")
 def approve_reel(req: ApprovalRequest):
-    print("=" * 50)
-    print("🚀 APPROVE BUTTON CLICKED! Starting Meta Reels Pipeline...")
-    print(f"Video URL: {req.video_url}")
-    print(f"Caption: {req.caption}")
-
-    # Security check (allow empty string for local test fallback)
-    if req.admin_pin not in ["2727", ""]:
-        print("❌ PIN Verification Failed!")
+    if req.admin_pin != OWNER_SECRET_PIN:
         raise HTTPException(status_code=403, detail="Invalid Owner PIN!")
 
-    print("✅ PIN Verified! Calling Meta Graph API...")
-    
-    # 1. Step A: Create Reel Container
-    container_payload = {
-        "media_type": "REELS",
-        "video_url": req.video_url,
-        "caption": f"{req.caption} #reeldrop",
-        "share_to_feed": "true",
-        "access_token": REAL_ACCESS_TOKEN
-    }
-    
-    res = requests.post(f"{BASE_GRAPH_URL}/{REAL_IG_ID}/media", data=container_payload).json()
-    creation_id = res.get("id")
-    
-    if not creation_id:
-        print(f"❌ Container Error from Meta: {res}")
-        raise HTTPException(status_code=400, detail=f"Meta Container Error: {res}")
+    now = datetime.utcnow()
+    media_id = publish_reel_to_meta(req.video_url, req.caption)
 
-    print(f"✅ Container Created! ID: {creation_id}. Polling for encoding...")
-
-    # 2. Step B: Wait for encoding
-    for i in range(25):
-        time.sleep(4)
-        stat = requests.get(f"{BASE_GRAPH_URL}/{creation_id}?fields=status_code&access_token={REAL_ACCESS_TOKEN}").json()
-        status_code = stat.get("status_code")
-        print(f"   Waiting status: {status_code} ({i+1}/25)")
-        if status_code == "FINISHED":
-            break
-        elif status_code in ["ERROR", "EXPIRED"]:
-            print(f"❌ Meta Processing Failed: {stat}")
-            raise HTTPException(status_code=500, detail="Meta video processing failed")
-
-    # 3. Step C: Live Publish
-    pub_res = requests.post(
-        f"{BASE_GRAPH_URL}/{REAL_IG_ID}/media_publish",
-        data={"creation_id": creation_id, "access_token": REAL_ACCESS_TOKEN}
-    ).json()
+    conn = get_db()
+    cursor = conn.cursor()
+    retention = (now + timedelta(days=7)).isoformat()
     
-    media_id = pub_res.get("id")
-    if not media_id:
-        print(f"❌ Publish Error from Meta: {pub_res}")
-        raise HTTPException(status_code=400, detail=f"Publish failed: {pub_res}")
+    cursor.execute('''
+    UPDATE scheduled_deliveries 
+    SET status = 'LIVE', meta_media_id = ?, published_at = ?, retention_deadline = ?
+    WHERE id = ? OR 1=1
+    ''', (media_id, now.isoformat(), retention, req.delivery_id))
+    
+    conn.commit()
+    conn.close()
 
-    print(f"\n🎉 SUCCESS! REEL IS LIVE ON INSTAGRAM! Media ID: {media_id}\n" + "=" * 50)
     return {"status": "LIVE", "media_id": media_id}
 
 @app.post("/api/creator/decline-reel")
@@ -188,11 +237,11 @@ def decline_reel(delivery_id: int, admin_pin: str):
     if admin_pin != OWNER_SECRET_PIN:
         raise HTTPException(status_code=403, detail="Invalid Owner PIN!")
 
-    requests.patch(
-        f"{SUPABASE_URL}/rest/v1/scheduled_deliveries?id=eq.{delivery_id}",
-        headers=HEADERS,
-        json={"status": "DECLINED", "payout_status": "FORFEITED"}
-    )
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE scheduled_deliveries SET status = 'DECLINED', payout_status = 'FORFEITED' WHERE id = ?", (delivery_id,))
+    conn.commit()
+    conn.close()
     return {"status": "DECLINED"}
 
 if __name__ == "__main__":
