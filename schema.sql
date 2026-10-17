@@ -66,7 +66,7 @@ ALTER TABLE scheduled_deliveries DISABLE ROW LEVEL SECURITY;
 -- Insert 5 Accounts (Mahiraj account REAL, baki 4 DEMO)
 INSERT INTO theme_pages (owner_name, instagram_business_id, instagram_handle, access_token, niche, follower_count, is_payout_eligible, price_per_reel, creator_payout_per_reel, upi_id, is_real, requires_approval)
 VALUES 
-('Mahiraj Singh', '17841405848759632', '@mahiraj.khakhri', 'EAAWS5Xwn0ikBSs5ro8fxc9weQeXTtupxrKkC41IWWroohw3WSP7rjN0hoMFZBaxaDXioZBmJZCzLBzorPo8Fuj55jqZAY9VOoBzGBNjdIkCwTQr8nJLqZAGVnvNXAE0ut7eTsHlWq3UgSMEmFV6fn4qdAE8MuC7mHeYq5ocS2KrDERr8jWo1NVmogCPBwZCiPkTPRSlU0thvnlPBZAFBhEZBW2aH6K8cHHPZCxD7T5QZDZD', 'Heritage & Travel', 1250, TRUE, 30.00, 10.00, 'mahiraj@upi', TRUE, TRUE),
+('Mahiraj Singh', '17841405848759632', '@mahiraj.khakhri', 'Upload Failed: Meta Container Error: {'error': {'message': 'Error validating access token: Session has expired on Thursday, 15-Oct-26 13:00:00 PDT. The current time is Saturday, 17-Oct-26 01:00:44 PDT.', 'type': 'OAuthException', 'code': 190, 'error_subcode': 463, 'fbtrace_id': 'AjywfQkscUcqxB5m-QLS4Aq'}}', 'Heritage & Travel', 1250, TRUE, 30.00, 10.00, 'mahiraj@upi', TRUE, TRUE),
 ('Tech Radar', '17841400000000002', '@ai_daily_pulse', 'DEMO_TOKEN', 'Tech & AI', 8400, TRUE, 70.00, 25.00, 'tech@okaxis', FALSE, FALSE),
 ('Wealth Club', '17841400000000003', '@wealth_mindset_in', 'DEMO_TOKEN', 'Finance & Crypto', 18200, TRUE, 120.00, 50.00, 'wealth@icici', FALSE, FALSE),
 ('Fitness Hub', '17841400000000004', '@fitness_hustle_club', 'DEMO_TOKEN', 'Fitness & Health', 920, FALSE, 0.00, 0.00, 'fit@paytm', FALSE, FALSE),
